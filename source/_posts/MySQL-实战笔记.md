@@ -343,3 +343,72 @@ MySQL优化器会找到最小的索引树来遍历，尽量减少扫描的数据
 
 show table status 中的 TABLE_ROWS 是通过采样来估算的，误差可能达到40%~50%
 
+### ORDER BY
+
+#### 全字段排序
+
+explain之后，Extra中的“Using filesort”表示的就是需要排序，MySQL会给每个线程分配一块内存用于排序，称为sort buffer
+
+```
+select city, name, age from t where city = 'A' order by name limit 1000;
+```
+
+执行流程：
+1. 初始化sort buffer，确定放入需要查询的字段
+2. 从索引找到第一个满足查询条件的id
+3. 到主键索引取出整行，取查询字段的值，存入sort buffer
+4. 从索引中取下一个记录的id
+5. 重复3、4步骤，直到不满足查询条件为止
+6. 对sort_buffer中的数据按照排序条件做快速排序
+7. 按照排序结果取前N行返回
+
+{% asset_img 18.jpg %}
+
+其中的排序动作，可能在内存中完成，也可能需要使用外部排序，取决于排序所需的内存和参数sort_buffer_size
+
+sort_buffer_size: sort_buffer的大小
+
+#### rowid排序
+
+max_length_for_sort_data: 如果单行的长度超过这个值，MySQL会认为单行太大，需要换一种算法
+新的算法放入sort_buffer的字段，只有需要排序的字段和主键id
+
+执行流程：
+1. 初始化sort buffer，确定放入排序字段和主键字段
+2. 从索引找到第一个满足查询条件的id
+3. 到主键索引中取出郑航，取排序字段和主键的值，存入sort buffer
+4. 从索引中取下一个记录的id
+5. 重复3、4步骤，直到不满足查询条件为止
+6. 对sort buffer中的数据按照排序字段排序
+7. 遍历排序结果，取前N行，并按照id的值回到原表中取出查询字段返回
+
+{% asset_img 19.jpg %}
+
+rowid排序多访问了一次主键索引
+
+
+
+如果可以保证从索引上取出的行，天然是按照排序字段排好序的话，就不需要排序操作了
+
+有时，可以通过建立联合索引解决
+
+{% asset_img 20.png %}
+
+执行流程：
+1. 从索引找到第一个满足查询条件的id
+2. 到主键索引中根据id取出整行，作为结果集的一部分直接返回
+3. 从索引中取下一个主键id
+4. 重复2、3步骤，直到查到第N条记录，或者当不满足查询条件时循环结束
+
+{% asset_img 21.jpg %}
+
+此时，explain中的extra为"Using index condition"
+
+可以利用覆盖索引，使过程更加简化
+eg 可以创建一个city、name、age的联合索引，这样的话就不需要回表了
+
+{% asset_img 22.jpg %}
+
+此时，explain中的extra为“Using index”
+
+
