@@ -37,6 +37,28 @@ innode_flush_log_at_trx_commit参数，设置成1的时候，表示每次事物�
 
 sync_binlog设置成1，表示每次事务的binlog都持久化到磁盘
 
+### redo log的写入机制
+
+redo log存在的三种状态
+{% asset_img 25.png %}
+
+- 存在redo log buffer中，物理上实在MySQL的进程内存中
+- 写到磁盘(write)，但是没有持久化(fsync), 物理上在文件系统的page cache里面
+- 持久化到磁盘，对应hard disk
+
+redo log写入策略控制：innodb_flush_log_at_trx_commit
+- 0：每次事务提交时都只把redo log留在redo log buffer
+- 1：每次事务提交时都把redo log直接持久化到磁盘（如果设置为1，redo log在prepare阶段就要持久化一次）
+- 2：每次事务提交时都把redo log写到page cache
+
+InnoDB有一个后台线程，每隔1s把redo log buffer中的日志写到page buffer，再写到磁盘
+
+事务执行中间过程的redo log也是直接写在redo log buffer的，这些redo log也会被后台线程一起持久化到磁盘
+
+还有两种场景也会让一个没有提交的事务的redo log持久化到磁盘
+- redo log buffer 占用的空间即将达到innodb_log_buffer_size一半的时候，后台线程会主动写盘。（只是write，没有fsync，只留在了page buffer）
+- 并行的事务提交的时候，顺带将这个事务的redo log buffer持久化到磁盘（innodb_flush_log_at_trx_commit = 1时，另一个事务提交时会写盘，此时会将未提交事务的redo log一并连带写入）
+
 ## binlog
 > server层自己的日志  
 
@@ -58,6 +80,16 @@ sync_binlog设置成1，表示每次事务的binlog都持久化到磁盘
 5. 执行器调用引擎的提交事务接口，把redo log状态更新为提交状态，更新完成02
 
 {% asset_img 03.png %}
+
+### binlog的写入机制
+
+事务执行过程中，写到binlog cache，提交的时候再把binlog cache写到binlog文件中
+
+系统给binlog cache分配了一片内存，每个线程一个，如果超过了设置的大小，就要暂存到磁盘
+
+{% asset_img 24.png %}
+
+每个线程有自己的binlog cache，但是共用一个binlog文件
 
 ## 事务隔离
 
