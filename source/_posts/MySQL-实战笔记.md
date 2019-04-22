@@ -91,6 +91,11 @@ InnoDB有一个后台线程，每隔1s把redo log buffer中的日志写到page b
 
 每个线程有自己的binlog cache，但是共用一个binlog文件
 
+write和fsync的时机，有参数sync_binlog控制
+- 0：每次提交事务都只write，不fsync
+- 1：每次提交事务都会fsybc
+- N(N>1)：每次提交事务都write，但积累N个事务后才fsync
+
 ## 事务隔离
 
 ### 事务隔离级别
