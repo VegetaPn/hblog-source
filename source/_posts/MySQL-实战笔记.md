@@ -476,4 +476,99 @@ eg (-∞,0]、(0,5]、(5,10]、(10,15]、(15,20]、(20, 25]、(25, +supremum]
 - 优化2：索引上的等值查询，向右遍历时且最后一个值不满足等值条件时，next-key lock退化为间隙锁
 - 唯一索引上的范围查询会访问到不满足条件的第一个值为止
 
+## 主备一致
+
+主备切换：
+{% asset_img 29.png %}
+
+建议备库设置成readOnly模式
+- 防止备库发生写操作
+- 防止切换逻辑有bug，比如切换过程中出现双写，造成主备不一致
+- 可以用readonly状态来判断节点的角色
+
+readonly模式对超级权限用户是无效的，所以不影响同步更新线程（拥有超级权限）
+
+内部流程：
+{% asset_img 30.png %}
+
+主库接收到客户端的更新请求后，执行内部事务的更新逻辑，同时写binlog
+备库和主库之间维持了一个长连接。主库内部有一个线程，专门用于服务备库的这个长连接
+
+事务日志同步的完整过程
+1. 在备库上通过change master命令，设置主库的IP、端口、用户名、密码，以及要从那个位置开始请求binlog，这个位置包含文件名和日志偏移量
+2. 在备库上执行start slave命令，这时备库会启动两个线程，就是图中的io_thread和sql_thread。其中io_thread负责与主库建立连接
+3. 主库校验完用户名、密码后，开始按照备库传过来的位置，从本地读取binlog，发给备库
+4. 备库拿到binlog后，写到本地文件，称为中转日志（replay log）
+5. sql_thread读取replay log，解析出日志里的命令，并执行
+
+### binlog的三种格式对比
+
+格式：statement, row, mixed
+
+1 statement
+{% asset_img 31.png %}
+
+记录了原始的SQL语句
+
+可能产生主备不一致的情况
+
+eg
+
+```
+delete from t where a>=4 and t_modified<='2018-11-10' limit 1;
+```
+
+主库选择了a索引，从库执行的时候选择了t_modified索引
+
+2 row
+{% asset_img 32.png %}
+
+没有SQL语句的原文，替换成了两个event：Table_map（说明接下来操作的库表）和Delete_rows（定义删除的行为）
+
+需要借助mysqlbinlog解析，才能看到详细信息
+
+```  
+mysqlbinlog -vv data/master.000001 --start-position=8900
+```
+
+{% asset_img 33.png %}
+
+- server id 1: 这个事务是在server_id=1这个库上执行的
+- Table_map event，和上面相同。如果操作多张表，每个表都会有一个Table_map event，都会map到一个单独的数字，用于区分对不同表的操作
+- 命令中使用了-vv参数（把内容都解析出来），所以从结果里面可以看到各字段的值（@1=4、@2=4）
+- Xid enent，表示事务被正确的提交了
+
+当binlog_format使用row格式的时候，binlog里面记录了真实删除行的主键id，这样binlog传到备库去的时候，就肯定会删除id=4的行，不会有主备删除不同行的问题
+
+3 mixed
+
+- row格式的缺点是很占空间，且可能影响执行速度。eg delete 10W行数据，statement格式就是一个SQL语句的记录，row格式需要记录10W条
+
+mixed格式，MySQL自己会判断这条SQL语句是否可能引起主备不一致，如果有可能，就用row格式，否则就用statement格式
+
+
+现在越来越多的场景要求设置为row格式。好处之一是恢复数据
+
+- delete：row格式会把删掉的整行信息保存下来，可以直接将其转成insert语句，插入回去恢复
+- insert：道理同上
+- update：会记录修改前郑航的数据和修改后的郑航数据，所以当误删时，将这个event前后的两行信息对调一下，再去执行，就能恢复
+
+### 循环复制问题
+
+双M结构，主备切换流程
+
+{% asset_img 34.png %}
+
+节点A和B之间总是互为主备，这样在切换的时候就不用再修改主备关系
+
+循环复制：
+当A更新了一条语句，把生成的binlog发给B，B执行完后也会生成binlog（建议把参数log_slave_updates设置为on，表示备库执行replay log后生成binlog）
+
+如果A同时是B的备库，相当于又把B新生成的binlog拿过来执行了一次，然后A和B之间会不断循环执行这个更新语句
+
+解决：
+MySQL在binlog中记录了这个命令第一次执行时所在实例的server id
+1. 规定两个库的server id必须不同
+2. 一个备库在接到binlog并在重放的过程中，生成与原binlog的server id相同的新的binlog
+3. 每个库在收到从自己的主库发过来的日志后，先判断server id，如果跟自己的相同，表示这个日志是自己生成的，就直接丢弃这个日志
 
