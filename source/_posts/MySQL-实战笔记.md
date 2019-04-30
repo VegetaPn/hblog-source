@@ -652,3 +652,49 @@ coordinator在分发的时候，需要满足的要求：
 ### 5.6 版本的并行复制策略
 
 支持并行复制，支持的粒度是按库并行
+
+### MariaDB 的并行复制策略
+
+利用组提交
+- 能够在同一组里提交的事务，一定不会修改同一行
+- 主库上可以并行执行的事务，备库上也一定是可以并行执行的
+
+1. 在一组里面一起提交的事务，有一个相同的commit_id，下一组就是commit_id+1
+2. commit_id直接写到binlog里面
+3. 传到备库应用的时候，相同commit_id的事务分发到多个worker执行
+4. 这一组全部执行完成后，coordinator再去取下一批
+
+主库并行事务：
+{% asset_img 38.png %}
+
+备库执行效果：
+{% asset_img 39.png %}
+
+在备库上执行的时候，要等第一组事务完全执行完成后，第二组事务才能开始执行，这样系统的吞吐量就不够
+另外，很容易被大事务拖后腿，大事务执行期间，只有一个worker线程在工作，浪费资源
+
+### 5.7 版本的并行复制策略
+
+有参数slave-parallel-type控制策略
+- DATABASE：表示使用5.6版本的按库并行策略
+- LOGICAL_LOCK：病史类似MariaDB的策略（做了优化）
+
+只要能够达到redo log prepare阶段，就表示事务已经通过锁冲突的检验了
+思想：
+- 同时处于prepare状态的事务，在备库执行时是可以并行的
+- 处于prepare状态的事务，与处于commit状态的事务之间，在备库执行时也是可以并行的
+
+- binlog_group_commit_sync_delay：延迟多少微秒后才调用fsync
+- binlog_group_commit_sync_no_delay_count：积累多少次以后才调用fsync
+
+这两个参数用于拉长binlog从write到fsync的时间，减少binlog的写盘次数。他们可以用来制造更多的“同时处于prepare阶段的事务”。这样就增加了备库复制的并行度
+
+### 5.7.22 版本的并行复制策略
+
+新增了一个参数binlog-transaction-dependency-tracking，用来控制是否启用这个新策略
+- COMMIT_ORDER: 根据同时进入prepare和commit来判断是否可以并行的策略
+- WRITESET: 对于事务涉及更新的每一行，计算出这一行的hash值，组成集合writeset，如果两个事务没有操作相同的行，也就是说他们的writeset没有交集，就可以并行
+- WRITESET_SESSION：在WRITESET基础上多了一个约束，在主库上同一个线程先后执行的两个事务，在备库执行的时候，要保证相同的先后顺序
+
+hash值通过“库名+表名+索引名+值”计算出来的。对于每一个唯一索引，insert语句对应的writeset就要多增加一个hash值
+
