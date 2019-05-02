@@ -698,3 +698,124 @@ coordinator在分发的时候，需要满足的要求：
 
 hash值通过“库名+表名+索引名+值”计算出来的。对于每一个唯一索引，insert语句对应的writeset就要多增加一个hash值
 
+
+## 主库故障后的主备切换问题
+
+一主多从基本结构：
+{% asset_img 40.png %}
+
+A和A'互为主备
+
+主库发生故障，主备切换后的结果：
+{% asset_img 41.png %}
+
+A'成为新的主库，从库B，C，D改接到A'
+
+### 基于位点的主备切换
+
+备库执行change master命令
+
+```
+CHANGE MASTER TO
+MASTER_HOST=$host_name
+MASTER_PORT=$port
+MASTER_USER=$user_name
+MASTER_PASSWORD=$password
+MASTER_LOG_FILE=$master_log_name
+MASTER_LOG_POS=$master_log_pos
+```
+
+问题：如何定位MASTER_LOG_POS
+
+不精确的定位方式：
+1. 等待A'把中转日志relay log全部同步完成
+2. A'执行show master status命令，得到A'最新的file和position
+3. 取A故障的时刻T
+4. 用mysqlbinlog工具解析A'的file，得到T时刻的位点
+
+```
+mysqlbinlog File --stop-datetime=T --start-datetime=T
+```
+
+mysqlbinlog输出内容
+{% asset_img 43.png %}
+end_log_pos后面的值123，表示A’这个实例，在T时刻写入binlog的位置。然后我们就可以把123这个值作为$master_log_pos
+
+位点不精确的情况：
+假设在T时刻，主库A已经完成执行了一个insert语句插入了一行数据R，并且已经将binlog传给了A'和B，在传完的瞬间A的主机掉电了
+此时系统的状态：
+- 在B上，由于同步了binlog，R这一行已经存在
+- 在A'上，R也存在，日志是写在123位置之后的
+- 在B执行change master命令，指向A'的123位置，就会把R这行的binlog又同步到B去执行
+
+此时，B会提示出现主键冲突，停止同步
+
+通常情况，在切换的时候，有两种常用的方法主动跳过错误
+
+1 跳过一个事务
+
+```
+set global sql_slave_skip_counter=1;
+start slave;
+```
+
+需要在B开始接到A'时，持续观察，每次遇到这些错误就停下来，执行一次跳过命令，直到不出现停下来的情况
+
+2 设置slave_skip_errors, 直接设置跳过指定的错误
+
+- 1062错误：插入时唯一键冲突
+- 1032错误：删除时找不到数据
+
+### GTID: Global Transaction Identifier
+
+全局事务ID，是一个事务提交时生成的，是这个事务的唯一标识
+
+由两部分组成：
+GTID = server_uuid:gno
+
+- server_uuid: 一个实例第一次启动时自动生成的，是一个全局唯一的值
+- gno: 一个整数，初始值是1，每次提交事务时分配给这个事务，并加1
+
+GTID模式的启动：启动一个MySQL实例的时候，加上参数gtid_mode=on和enforce_gtid_consistency=on
+
+gtid_next: 决定GTID的生成方式
+- gtid_next=automatic，代表使用默认值，这时MySQL就会把server_uu id:gno分配给这个事务
+- - 记录binlog的时候，先记录一行SET @@SESSION.GTID_NEXT='server_uuid:gno'
+- - 把这个GTID加入本实例的GTID集合
+- gtid_next是一个指定的GTID的值，比如通过set gtid_next='current_gtid'指定为current_gtid, 那么就有两种可能
+- - 如果current_gtid已经存在于本实例的GTID集合，接下来执行的这个事务就会被忽略
+- - 如果current_gtid不存在于本实例的GTID集合，就将这个current_gtid分配给接下来要执行的事务，也就是说系统不需要给这个事务生成新的GTID，gno也不同加1
+
+一个current_gtid只能给一个事务使用，这个事务提交后，如果要执行下一个事务，就要执行set命令，把gtid_next设置为另外一个gtid或者automatic
+
+这样，每个MySQL实例都维护了一个GTID集合，用来对应“这个实例执行过的所有事务”
+
+### 基于GTID的主备切换
+
+```
+CHANGE MASTER TO
+MASTER_HOST=$master_host
+MASTER_PORT=$master_port
+MASTER_USER=$master_user
+MASTER_PASSWORD=$password
+master_auto_position=1
+```
+
+master_auto_position=1表示这个主备关系表示的是GTID协议
+
+将A'的GTID集合记为set_a，将B的GTID集合记为set_b
+主备切换逻辑：
+1. 实例B指定主库A'，基于主备协议建立连接
+2. 实例B把set_b发给主库A'
+3. A'算出set_a和set_b的差集，判断A'本地是否已经包含了差集需要的所有binlog事务
+    3.1 如果不包含，表示A'已经把B所需要的binlog删掉了，返回错误
+    3.2 如果确认全部包含，A'从自己的binlog文件里面，找出一个不在set_b的事务，发给B
+4. 之后就从这个事务开始，往后读文件，按顺序取binlog发给B去执行
+
+在基于GTID的主备关系里，系统认为只要建立主备关系，就必须保证主库发给备库的日志是完整的，因此，如果实例B需要的日志不存在，A'就拒绝把日志发给B
+
+切换后，主库A'自己生成的binlog中的GTID集合格式是server_uuid_of_A':1-N
+如果B之前的GTID集合格式是server_uuid_of_A:1-N，那么切换后GTID集合格式就变成了server_uuid_of_A:1-N, server_uuid_of_A':1-M
+
+因为A'此前也是A的备库，因此A'和B的GTID集合是一样的，这就达到了我们的预期
+
