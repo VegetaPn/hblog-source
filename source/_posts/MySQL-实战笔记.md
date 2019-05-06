@@ -819,3 +819,60 @@ master_auto_position=1表示这个主备关系表示的是GTID协议
 
 因为A'此前也是A的备库，因此A'和B的GTID集合是一样的，这就达到了我们的预期
 
+
+## 读写分离
+
+读写分离两种架构：客户端直连和proxy
+
+客户端直连
+client主动做负载均衡，选择数据库进行查询
+
+{% asset_img 44.png %}
+
+proxy
+client连接至proxy，proxy进行分发路由
+
+{% asset_img 45.png %}
+
+### 过期读
+
+由于主从延迟，更新完立即查询，查询的是从库的话，会读到系统的一个过期状态
+
+处理方案
+- 强制读主
+- sleep：读从库前sleep一下
+- 判断主备无延迟
+- 配合semi-sync
+- 等主库位点
+- 等GTID
+
+sleep的另一种实现：更新后直接将输入内容进行展示，这样再刷新的时候读从就相当于间接的sleep了
+
+判断主备无延迟 (无法解决主库已经完成事务但备库还没收到binlog的情况, 持续延迟情况下会出现过度等待)：
+1 判断seconds_behind_master是否为0
+2 对比位点判断
+show slave status命令，其中Master_Log_File和Read_Master_Log_Pos表示读到的主库的最新位点，Relay_Master_Log_File和Exec_Master_Log_Pos表示备库执行的最新位点
+3 对比GTID集合
+show slave status命令，其中Auto_Position=1表示使用了GTID协议，Retrieved_Gtid_Set表示备库收到的所有日志的GTID集合，Executed_Gtid_Set表示备库所有已经执行完成的GTID集合
+
+{% asset_img 46.png %}
+
+**semi-sync**
+1. 事务提交的时候，主库发送binlog给从库
+2. 从库收到之后，返回给主库ack
+3. 主库收到ack后才会确认“事务完成”
+
+一主一从可以解决过期读，但是一主多从不能
+
+**等主库位点**
+等待主库执行到某一个位置
+1. 事务更新完成后，执行show master status得到主库当前执行到的位点
+2. 在从库上执行select master_pos_wait
+3. 如果返回值>=0，则在这个从库执行查询语句
+4. 否则（超时或异常）到主库查询语句
+
+**等主库GTID**
+1. 事务更新完成后，从返回包直接获取这个事物的GTID
+2. 在从库上执行select wait_for_executed_gtid_set
+3. 如果返回值是0，则在这个从库上执行查询
+4. 否侧（超时）到主库查询
