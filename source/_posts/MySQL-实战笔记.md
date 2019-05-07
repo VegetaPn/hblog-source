@@ -876,3 +876,33 @@ show slave status命令，其中Auto_Position=1表示使用了GTID协议，Retri
 2. 在从库上执行select wait_for_executed_gtid_set
 3. 如果返回值是0，则在这个从库上执行查询
 4. 否侧（超时）到主库查询
+
+
+## 判断是否出问题
+
+并发连接和并发查询
+
+innodb_thread_concurrency 限制并发查询线程数的上线，建议64-128
+线程进入锁等待后，并发线程的计数会减1 
+
+### 查表判断
+
+建立健康检查表，定期执行查询
+
+问题：空间满之后，更新语句和事务提交的commit语句由于binlog无法写，会堵住，但是查询还可以正常进行
+
+### 更新判断
+
+定期更新健康检查表
+
+双M结构下，可能会出现行冲突，此时需要在健康检查表存入多行数据（server_id, timestamp）, 使用server_id作为主键
+
+问题：判定慢，即使update命令没有超时，但是可能正常的语句已经执行的很慢了
+
+轮询检测的方式，可能会导致延迟发现问题
+
+### 内部统计
+
+5.6版本之后，performance_schema库的file_summary_by_event_name表里统计了每次IO请求的时间
+
+如果打开所有的performance_schema项，性能大概下降10%，建议只打开需要的项进行统计
