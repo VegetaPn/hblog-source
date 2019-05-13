@@ -906,3 +906,43 @@ innodb_thread_concurrency 限制并发查询线程数的上线，建议64-128
 5.6版本之后，performance_schema库的file_summary_by_event_name表里统计了每次IO请求的时间
 
 如果打开所有的performance_schema项，性能大概下降10%，建议只打开需要的项进行统计
+
+## 误删数据
+
+- delete 删除数据行
+- drop table 或 truncate table 误删数据表
+- drop database 误删数据库
+- rm 命令误删整个MySQL实例
+
+### 误删行
+
+Flashback工具通过闪回恢复，需要确保binlog_format=row和binlog_row_image=FULL
+
+不建议直接在主库上执行操作
+恢复出一个备份，或者找一个从库作为临时库。再执行恢复，再将确认过的临时库的数据恢复回主库
+
+### 误删库或表
+
+使用全量备份，binlog恢复
+
+### 延迟复制备库
+
+CHANGE MASTER TO MASTER_DELAY = N
+
+如果发生主库数据被误删，可以在N秒前在这个备库执行stop slave
+
+### rm删除实例
+
+HA系统会选出一个新的主库
+
+## LRU 改进
+
+InnoDB管理Buffer Pool，使用链表实现了LRU算法
+
+- 按照5：3比例分为young区和old区。LRU_old指向old区第一个位置
+- 新插入的数据页，放在LRU_old处
+- 处于old区的数据页，每次被访问时做如下判断：
+  - 如果这个数据页存在的时间超过了1s，就把它移动到链表头部
+  - 如果短于1s，保持位置不变
+
+大表扫描过程中，对young区没有影响
