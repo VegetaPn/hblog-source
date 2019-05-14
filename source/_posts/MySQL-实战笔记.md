@@ -973,6 +973,8 @@ InnoDB管理Buffer Pool，使用链表实现了LRU算法
 
 决定哪个表做驱动表：两个表按照各自的条件过滤，过滤完成后，计算参与join的各个字段的总数据量，数据量小的表就是小表，应该作为驱动表
 
+可能导致buffer pool的热数据被淘汰，影响内存命中率
+
 ### MRR: Multi-Range Read 优化
 
 尽量使用顺序读盘
@@ -987,4 +989,12 @@ InnoDB管理Buffer Pool，使用链表实现了LRU算法
 ### BKA: Batched Key Access
 
 从t1中多取一些行，放入join_buffer，一起传给t2做join
+
+## 临时表
+
+- 建表语法是create temporary table...
+- 一个临时表只能被创建它的session访问
+- 临时表可以与普通表同名
+- session A内有同名的临时表和普通表的时候，各语句访问的是临时表
+- show tables不显示临时表
 
