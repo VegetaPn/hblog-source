@@ -972,3 +972,19 @@ InnoDB管理Buffer Pool，使用链表实现了LRU算法
 如果join_buffer放不下，就分多次执行。”分块去join“
 
 决定哪个表做驱动表：两个表按照各自的条件过滤，过滤完成后，计算参与join的各个字段的总数据量，数据量小的表就是小表，应该作为驱动表
+
+### MRR: Multi-Range Read 优化
+
+尽量使用顺序读盘
+
+多数数据是按照主键递增顺序插入得到的，如果按照主键的递增顺序查询的话，对磁盘的读比较接近顺序读，能够提升性能
+
+回表MRR优化流程
+1. 根据索引a，定位到满足条件的记录，将id值放入read_rnd_buffer中
+2. 将read_rnd_buffer中的id进行递增排序
+3. 排序后的id数组，依次到主键id索引中查记录，并作为结果返回
+
+### BKA: Batched Key Access
+
+从t1中多取一些行，放入join_buffer，一起传给t2做join
+
