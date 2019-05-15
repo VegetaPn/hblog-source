@@ -13,6 +13,8 @@ categories: Study, Methodology
 
 课程分为四周，感觉信息度并不密集，应该很容易掌握
 
+<!-- more -->
+
 ## WEEK 1
 
 第一周内容为课程总体介绍、Diffuse Mode & Foucused Mode、What is Learning、采访（Opt）
@@ -30,3 +32,9 @@ Diffuse Mode：在睡觉时、注意力分散时，大脑进行整理，有时�
 和其他人一起讨论、合作，保持好奇心、乐于提问
 
 使用思维导图，写作时只写不修改，用专门的时间修改
+
+## WEEK 2
+
+{% asset_img 01.jpg %}
+
+{% asset_img 02.jpg %}
