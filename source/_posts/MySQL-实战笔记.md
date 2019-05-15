@@ -998,3 +998,54 @@ InnoDB管理Buffer Pool，使用链表实现了LRU算法
 - session A内有同名的临时表和普通表的时候，各语句访问的是临时表
 - show tables不显示临时表
 
+### 内部临时表
+
+**union 执行时需要用到内部临时表**
+
+利用了唯一键约束
+1. 创建一个内存临时表
+2. 执行第一个子查询，存入临时表
+3. 执行第二个子查询
+   1. 拿到每一行后试图插入临时表中，当出现唯一冲突时插入失败，继续执行
+4. 从临时表中按行取出数据返回结果，删除临时表
+
+**group by**
+
+```
+create table t1(id int primary key, a int, b int, index(a));
+
+select id%10 as m, count(*) as c from t1 group by m;
+```
+
+1. 创建内存临时表
+2. 扫描t1的索引a，依次取出id值，计算id%10的结果，记为x
+   1. 如果临时表中没有主键为x的行，就插入一个记录(x, 1)
+   2. 如果有，将这一行的c值加1
+3. 根据m排序，将结果返回
+
+当内存临时表的大小不够时会转为磁盘临时表
+
+### group by 优化 -- 索引
+
+扫描过程中保证数据有序
+
+这样计算group by的时候，只需要从左到右顺序扫描，一次累加，不需要临时表和排序
+
+### group by 优化 -- 直接排序
+
+数据量大时让MySQL直接走磁盘临时表
+
+```
+select SQL_BIG_RESULT id%100 as m, count(*) as c from t1 group by m;
+```
+
+1. 初始化sort buffer, 放入m字段
+2. 扫描t1的索引a，依次取出id，将id%100的值存入sort buffer
+3. 扫描完成后对sort_buffer的字段m排序
+4. 排序完成后按顺序扫描累加，返回结果
+
+
+- 如果对group by的结果没有排序要求，在语句后加order by null
+- 尽量让group by过程使用索引
+- 如果group by统计的数据量不大，尽量只是用内存临时表
+- 如果数据量很大，使用SQL_BIG_RESULT
