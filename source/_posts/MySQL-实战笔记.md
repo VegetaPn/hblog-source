@@ -1049,3 +1049,31 @@ select SQL_BIG_RESULT id%100 as m, count(*) as c from t1 group by m;
 - 尽量让group by过程使用索引
 - 如果group by统计的数据量不大，尽量只是用内存临时表
 - 如果数据量很大，使用SQL_BIG_RESULT
+
+## Memory引擎
+
+索引组织表 (Index Organizied Table)：InnoDB引擎把数据放在主键索引上，其他索引上保存的是主键id
+堆组织表 (Heap Organizied Table)：Memory引擎把数据单独存放，索引上保存数据位置
+
+内存表不支持行锁，只支持表锁
+
+## 自增主键
+
+表的结构定义存放在.frm文件中，但是不会保存自增值
+
+### 保存
+
+- MyISAM：保存在数据文件中
+- InnoDB：
+  - 5.7及以前：保存在内存里，没有持久化，重启后回去找最大的id，将id+1作为当前自增值
+  - 8.0：将自增值的变更记录在了redo log中，重启后依靠redo log恢复
+
+### 修改
+
+1. 如果插入时id没有指定或指定为0，就把当前的AUTO_INCREMENT值填到自增字段
+2. 如果插入时指定了id，就直接使用语句里指定的值
+   1. 如果指定的id小于当前自增值，那么这个表的自增值不变
+   2. 如果大于等于，把当前自增值修改为新的自增值
+
+自增值生成算法：从auto_increment_offset开始，以auto_increment_increment为步长，持续叠加，直到找到第一个大于指定的id，作为新的自增值
+
