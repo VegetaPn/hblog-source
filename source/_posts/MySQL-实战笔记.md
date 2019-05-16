@@ -1077,3 +1077,7 @@ select SQL_BIG_RESULT id%100 as m, count(*) as c from t1 group by m;
 
 自增值生成算法：从auto_increment_offset开始，以auto_increment_increment为步长，持续叠加，直到找到第一个大于指定的id，作为新的自增值
 
+自增主键id不连续可能的原因：
+- 发生了唯一键冲突
+- 事务回滚（回滚时自增值不回退）
+
