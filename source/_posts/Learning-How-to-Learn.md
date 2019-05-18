@@ -38,3 +38,7 @@ Diffuse Mode：在睡觉时、注意力分散时，大脑进行整理，有时�
 {% asset_img 01.jpg %}
 
 {% asset_img 02.jpg %}
+
+{% asset_img 03.png %}
+
+{% asset_img 04.png %}
