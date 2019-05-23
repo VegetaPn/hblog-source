@@ -1083,3 +1083,58 @@ select SQL_BIG_RESULT id%100 as m, count(*) as c from t1 group by m;
 - 批量插入时申请自增id的策略：同一个语句申请的时候，每次申请的id个数是上一次的两倍
     - （无法预知需要的数量，先申请1个，用完申请2个，再用完申请4个，以此类推）
 
+
+## 分区表
+
+```
+CREATE TABLE `t` (
+    `ftime` datetime NOT NULL, 
+    `c` int(11) DEFAULT NULL,
+    KEY (`ftime`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+PARTITION BY RANGE (YEAR(ftime))
+(PARTITION p_2017 VALUES LESS THAN (2017) ENGINE = InnoDB, 
+PARTITION p_2018 VALUES LESS THAN (2018) ENGINE = InnoDB, 
+PARTITION p_2019 VALUES LESS THAN (2019) ENGINE = InnoDB, 
+PARTITION p_others VALUES LESS THAN MAX_VALUE ENGINE = InnoDB);
+
+insert into t values('2017-4-1', 1),('2018-4-1', 1);
+```
+
+包含了1个.frm和4个.ibd
+- 对于引擎层，是4个表
+- 对于Server层，是1个表
+
+间隙锁分区之间隔离
+
+{% asset_img 49.png %}
+
+普通表的加锁范围: 
+{% asset_img 47.png %}
+
+分区表t的加锁范围:
+{% asset_img 48.png %}
+
+手动分表和分区表的区别： 一个是由server层决定使用哪个分区，一个是由应用层代码决定使用哪个分表
+
+### 分区策略
+
+第一次访问一个分区表的时候，MySQL需要把所有的分区都访问一遍
+如果一个分区表的分区很多，超过了open_file_limits上限，会导致打开表文件的个数超过上限而报错
+
+MyISAM的通用分区策略：（弃用）
+每次访问分区都由server层控制
+
+InnoDB的本地分区策略：
+在InnoDB内部自己管理打开分区的行为
+
+在server层看的话，一个分区表就是一个表，因此所有分区共用同一个MDL锁。所以分区表在做DDL的时候影响会更大
+在引擎层，认为是不同的表，因此MDL锁之后的执行过程，会根据分区表规则，只访问必要的分区
+
+如果where条件是ftime >= '2018-4-1'，需要访问p_2019和p_others这两个分区，如果where条件里没有key，需要访问所有分区
+
+### 应用场景
+
+对业务透明
+
+按照时间分区的分区表，在删除历史数据的时候较为容易，alter table drop tartition删掉分区
