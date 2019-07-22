@@ -18,6 +18,8 @@ categories: Tech
 Java：
 通过锁和循环CAS的方式
 
+<!-- more -->
+
 循环CAS：循环进行CAS直到成功为止
 问题解决：
 ABA问题：加入版本号 AutomicStampedReference
