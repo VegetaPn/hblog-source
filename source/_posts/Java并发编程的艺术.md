@@ -1,5 +1,5 @@
 ---
-title: [Note] Java 并发编程的艺术
+title: Note -- Java 并发编程的艺术
 date: 2019-07-23 00:04:13
 tags: Java
 categories: Tech
