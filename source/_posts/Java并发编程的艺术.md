@@ -175,3 +175,6 @@ JSR-133严格限制了volatile变量与普通变量的重排序，确保volatile
 2. 使用CAS的原子条件更新来实现线程之间的同步
 3. 同时配合以volatile的读/写和CAS所具有的的volatile读写的内存语义来实现线程之间的通信
 
+
+### finally域的内存语义
+
