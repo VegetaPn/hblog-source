@@ -147,3 +147,31 @@ JSR-133严格限制了volatile变量与普通变量的重排序，确保volatile
 线程释放锁时，JMM会把该线程对应的本地内存中的共享变量刷新到主内存中
 
 线程获取锁时，JMM会把该线程对应的本地内存置为无效
+
+**ReentrantLock**
+
+利用volatile变量
+
+公平锁：
+加锁方法首先读volatile变量state；
+解锁方法在释放锁的最后写volatile变量state
+
+非公平锁：
+释放：和公平锁相同
+获取：以原子操作的方式更新state变量。CAS，具有volatile读和写的内存语义
+
+
+### concurrent包的实现
+
+**Java线程间的通信方式**
+
+- A线程写volatile变量，B线程读
+- A线程写volatile变量，B线程用CAS更新
+- A线程用CAS更新volatile变量，B线程读
+- A线程用CAS更新volatile变量，B线程用CAS更新
+
+通用化实现模式：
+1. 声明共享变量为volatile
+2. 使用CAS的原子条件更新来实现线程之间的同步
+3. 同时配合以volatile的读/写和CAS所具有的的volatile读写的内存语义来实现线程之间的通信
+
