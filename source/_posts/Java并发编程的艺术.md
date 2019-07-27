@@ -212,3 +212,26 @@ JSR-133严格限制了volatile变量与普通变量的重排序，确保volatile
 x86处理器：final域的读/写不会插入任何内存屏障
 由于不会对写-写操作做重排序，写final域所需的StoreStore会省略掉
 由于不会对存在间接依赖关系的操作做重排序，读final域需要的LoadLoad也会省略掉
+
+
+### happens-before
+
+**定义**
+
+1. 如果一个操作happens-before另一个操作，那么第一个操作的执行结果对第二个操作可见，而且第一个操作的执行顺序排在第二个操作之前
+2. 两个操作存在happens-before关系，并不意味着Java的具体实现必须按照happens-before关系指定的顺序执行。如果重排序之后的执行结果，与按happens-before关系来执行的结果一致，那么这种重排序并不非法
+
+as-if-serial语义保证单线程内程序的执行结果不被改变，happens-before关系保证正确同步的多线程程序的执行结果不被改变
+
+JMM将happens-before要求禁止的重排序分为了两类
+1. 会改变程序结果的重排序 -- 必须禁止
+2. 不会改变程序结果的重排序 -- 不做要求
+
+**happens-before规则**
+
+1. 程序顺序规则：一个线程中的每个操作，happens-before于该线程的任一后续操作
+2. 监视器锁规则：对一个锁的解锁，happens-before于随后对这个锁的加锁
+3. volatile变量规则：对一个volatile域的写，happens-before于任意后续对这个volatile域的读
+4. 传递性
+5. start()规则：如果线程A执行操作ThreadB.start()，那么A线程的ThreadB.start()操作happens-before于线程B中的任意操作
+6. join()规则：如果线程A执行操作ThreadB.join()并返回成功，那么线程B中的任意操作happens-before于线程A从ThreadB.join()操作成功返回
