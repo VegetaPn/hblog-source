@@ -222,6 +222,7 @@ x86处理器：final域的读/写不会插入任何内存屏障
 2. 两个操作存在happens-before关系，并不意味着Java的具体实现必须按照happens-before关系指定的顺序执行。如果重排序之后的执行结果，与按happens-before关系来执行的结果一致，那么这种重排序并不非法
 
 as-if-serial语义保证单线程内程序的执行结果不被改变，happens-before关系保证正确同步的多线程程序的执行结果不被改变
+程序顺序规则可以看成是对as-if-serial的封装
 
 JMM将happens-before要求禁止的重排序分为了两类
 1. 会改变程序结果的重排序 -- 必须禁止
@@ -235,3 +236,32 @@ JMM将happens-before要求禁止的重排序分为了两类
 4. 传递性
 5. start()规则：如果线程A执行操作ThreadB.start()，那么A线程的ThreadB.start()操作happens-before于线程B中的任意操作
 6. join()规则：如果线程A执行操作ThreadB.join()并返回成功，那么线程B中的任意操作happens-before于线程A从ThreadB.join()操作成功返回
+
+
+### 双重检查锁定与延迟初始化
+
+双重检查锁定的问题：第一次判断对象是否为null时，instance引用的对象可能还没有完成初始化
+
+1. 分配对象的内存空间
+2. 初始化对象
+3. 设置instance指向内存空间
+
+其中2和3可能重排序
+
+**解决方案**
+
+思路1：禁止2和3重排序
+思路2：允许2和3重排序，但是禁止其他线程看到这个重排序
+
+**基于volatile的解决方案**
+
+将instance声明为volatile型
+禁止2和3的重排序
+
+**基于类初始化的解决方案**
+> Initialization On Demand Holder idiom
+
+instance holder
+JVM在类的初始化阶段（即在Class被加载后，且被线程使用前），会执行线程的初始化。在执行类的期间，JVM会去获取一个锁。这个锁可以同步多个线程对同一个类的初始化
+允许2和3重排序，但是禁止其他线程看到这个重排序
+
