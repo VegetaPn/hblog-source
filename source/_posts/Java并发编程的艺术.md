@@ -308,3 +308,45 @@ JVM在类的初始化阶段（即在Class被加载后，且被线程使用前）
 
 程序正确性不能依赖线程的优先级，有些操作系统会忽略线程优先级的设定
 
+
+**线程的状态**
+
+- NEW
+- RUNNABLE
+- BLOCKED
+- WAITING
+- TIME_WAITING
+- TERMINATED
+
+**Daemon线程**
+
+支持型线程，用作程序中后台调度以及支持性工作
+一个JVM中不存在非Daemon线程的时候，JVM将会退出
+
+JVM退出时Daemon线程中的finally块并不一定会执行
+
+**线程中断**
+
+中断可以理解为线程的一个标识位属性，表示一个运行中的线程是否被其他线程进行了中断操作
+线程通过检查自身是否被中断来进行相应
+在线程抛出InterruptedException之前JVM会先将该线程的中断表示位清除，此时调用isInterrupted()将会返回false
+
+**过期的 suspend(), resume(), stop()**
+
+不建议使用
+会带来副作用，不保证对资源的正确释放，可能导致程序工作在不确定状态下
+
+**安全的终止线程**
+
+- 使用thread.interrupt()
+- 使用volatile boolean变量进行控制
+
+**线程间的通信**
+
+volatile和synchronized
+
+synchronized
+同步块的实现使用了monitorenter和monitorexit指令
+同步方法依靠方法修饰符上的ACC_SYNCHRONIZED来完成的
+本质上是对一个对象的monitor进行获取，如果获取失败，线程进入同步队列，线程状态变为BLOCKED。当获得了锁的线程释放了锁，则该释放操作唤醒阻塞在同步队列中的线程，使其重新尝试对监视器的获取
+
