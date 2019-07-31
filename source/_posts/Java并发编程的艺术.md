@@ -343,10 +343,86 @@ JVM退出时Daemon线程中的finally块并不一定会执行
 
 **线程间的通信**
 
-volatile和synchronized
+**volatile和synchronized**
 
 synchronized
 同步块的实现使用了monitorenter和monitorexit指令
 同步方法依靠方法修饰符上的ACC_SYNCHRONIZED来完成的
 本质上是对一个对象的monitor进行获取，如果获取失败，线程进入同步队列，线程状态变为BLOCKED。当获得了锁的线程释放了锁，则该释放操作唤醒阻塞在同步队列中的线程，使其重新尝试对监视器的获取
+
+**等待/通知机制**
+
+线程A调用了对象O的wait()方法进入等待状态，而另一个线程B调用了对象O的notify()或者notifyAll()方法，线程A收到通知后从对象O的wait()方法返回，进而执行后续操作
+
+调用wait()方法后，会释放对象的锁
+从wait()方法返回的前提是该线程获取到了对象的锁
+
+- 使用wait(), notify(), notifyAll()时需要先对调用对象加锁
+- 调用wait()方法后，线程状态由RUNNING变为WAITING，并将当前线程放置到对象的等待队列
+- notify()或notifyAll()方法调用后，等待线程依旧不会从wait()返回，需要调用notify()或notifyAll()的线程释放锁之后，等待线程才有机会从wait()返回
+- notify()方法将等待队列中的一个等待线程从等待队列中移到同步队列中，notifyAll方法将等待队列中所有的线程全部移到同步队列，被移动的线程状态从WAITTING变为BLOCKED
+- 从wait()方法返回的前提是获得了调用对象的锁
+
+**等待/通知的经典范式**
+
+等待方遵循如下原则：
+1. 获取对象的锁
+2. 如果条件不满足，调用对象的wait()方法，被通知后仍要检查条件
+3. 条件满足则执行对应的逻辑
+
+```
+synchronized(对象) {
+    while(条件不满足) {
+        对象.wait();
+    }
+    对应的处理逻辑;
+}
+```
+
+通知方遵循如下原则：
+1. 获取对象的锁
+2. 改变条件
+3. 通知所有等待在对象上的线程
+
+```
+synchronized(对象) {
+    改变条件;
+    对象.notifyAll();
+}
+```
+
+**管道输入/输出流**
+
+主要用于线程间的数据传输，传输的媒介为内存
+具体实现：PipedOutputStream, PipedInputStream, PipedReader, PipedWriter. 前两种面向字节，后两种面向字符
+
+对于Piped类型的流，必须要先调用connect方法进行绑定
+
+**Thread.join()**
+
+当前线程A等待thread线程终止之后才从thread.join()返回
+或者thread.join(long millis)
+
+join()方法：
+```
+// 加锁当前线程对象
+public final synchronized void join() throws InterruptedException {
+    // 条件不满足，继续等待
+    while(isAlive()) {
+        wait(0);
+    }
+    // 条件符合，方法返回
+}
+```
+
+当线程终止时，会调用线程自身的notifyAll方法，通知所有等待在该线程对象上的线程
+
+和等待/通知经典范式一致
+
+**ThreadLocal的使用**
+
+线程变量，以ThreadLocal对象为键，任意对象为值的存储结构
+被附带在线程上，一个线程可以根据一个ThreadLocal对象查询到绑定在这个线程上的一个值
+
+通过set(T)方法来设置一个值，在当前线程下再通过get()方法获取到原先设置的值
 
