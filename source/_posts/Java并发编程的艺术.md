@@ -426,3 +426,34 @@ public final synchronized void join() throws InterruptedException {
 
 通过set(T)方法来设置一个值，在当前线程下再通过get()方法获取到原先设置的值
 
+
+### 线程应用实例
+
+**等待超时模式**
+
+在等待/通知范式基础上增加了超时控制，使得该模式相比原有范式更具灵活性
+
+```
+public synchronized Object get(long millis) throws InterruptedException {
+    long future = System.currentTimeMillis() + millis;
+    long remaining = millis;
+    // 当超时大于0并且result返回值不满足要求
+    while ((result == null) && remaining > 0) {
+        wait(remaining);
+        remaining = future - System.currentTimeMillis();
+    }
+    return result;
+}
+```
+
+**线程池技术**
+
+- 消除了频繁创建和消亡线程的系统资源开销
+- 面对过量任务的提交能够平缓的劣化
+
+本质上使用了一个线程安全的工作队列连接工作者线程和客户端线程，客户端线程将任务放入工作者队列后便返回，工作者线程不断地从工作队列上取出工作并执行。
+当工作队列为空时，所有的工作者线程均等待在工作队列上，当有客户端提交了一个任务后便会通知任意一个工作者线程
+
+当客户端调用execute(Job)方法时，会不断地向任务列表jobs中添加Job，而每个工作者线程会不断地从jobs上取出一个Job进行执行，当jobs为空时，工作者线程进入等待状态
+
+添加一个Job后，对工作队列jobs调用了其notify()方法（不是notifyAll，为了获得更小的开销）
