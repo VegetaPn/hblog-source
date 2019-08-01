@@ -521,3 +521,21 @@ public synchronized Object get(long millis) throws InterruptedException {
 
 首先调用自定义同步器实现的tryAcquire方法，如果同步状态获取失败，则构造同步节点（独占式Node.EXECUSIVE)，并通过addWaiter方法将该节点加入到同步队列的尾部，最后调用acquireQueued(Node node, int arg)方法，使得该节点以”死循环“的方式获取同步状态。如果获取不到则阻塞节点中的线程，而被阻塞线程的环境主要依靠前驱节点的出队或阻塞线程被中断来实现
 
+独占式同步状态获取流程：
+{% asset_img t5-5-i.jpg %}
+
+通过调用同步器的release(int arg)方法可以释放同步状态，释放同步状态之后会唤醒其后继节点
+
+
+共享式同步状态获取与释放
+
+eg：文件的读操作，可以共享式访问
+
+共享式访问资源时，其他共享式的访问均被允许，独占式访问被阻塞
+独占式访问资源时，同一时刻其他访问均被阻塞
+
+在acquireShared(int arg)方法中，同步器调用tryAcquireShared(int arg)方法尝试获取同步状态
+在共享式获取的自旋过程中，成功获取到同步状态并退出自旋的条件就是tryAcquireShared(int arg)方法返回值大于等于0。如果当前节点的前驱为头节点时，尝试获取同步状态
+
+通过调用releaseShared(int arg)释放同步状态
+释放同步状态后唤醒后续处于等待状态的节点
