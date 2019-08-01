@@ -457,3 +457,67 @@ public synchronized Object get(long millis) throws InterruptedException {
 当客户端调用execute(Job)方法时，会不断地向任务列表jobs中添加Job，而每个工作者线程会不断地从jobs上取出一个Job进行执行，当jobs为空时，工作者线程进入等待状态
 
 添加一个Job后，对工作队列jobs调用了其notify()方法（不是notifyAll，为了获得更小的开销）
+
+
+### Java中的锁
+
+#### Lock接口
+
+显示的获取和释放锁
+
+特性
+- 尝试非阻塞的获取锁
+- 能被中断的获取锁：获取到锁的线程能够响应中断，当获取到锁的线程被中断时，中断异常将会抛出，同时锁会被释放
+- 超时获取锁
+
+基本操作
+- lock()
+- lockInteruptibly()
+- tryLock()
+- tryLock(long time, TimeUnit unit) throws InterruptedException
+- unlock()
+- newCondition()
+
+#### 队列同步器 AbstractQueuedSynchronizer
+
+**AQS的接口**
+
+构建锁或者其他同步组件的基础框架
+使用了一个int成员变量表示同步状态，通过内置的FIFO队列来完成资源获取线程的排队工作
+
+定义了若干同步状态获取和释放的方法来供自定义同步组件使用
+自定义同步组件使用同步器提供的模板方法来实现自己定义的同步语义
+
+面向的是锁的实现者，简化了锁的实现方式
+
+使用getState(), setState(int newState), compareAndSetState(int expect, int update)来访问或者修改同步状态
+
+同步器可重写的方法：
+- tryAcquire(int arg): 独占式获取同步状态
+- tryRelease(int arg)：独占式释放同步状态
+- tryAcquireShared(int arg): 共享式获取同步状态，同一时刻可以有多个线程获取到同步状态
+- tryReleaseShared(int arg): 共享式释放同步状态
+- isHeldExclusively(): 当前同步器是否在独占模式下被线程占用，一般表示是否被当前线程所占
+
+同步器提供的模板方法：
+基本上分为三类：独占式获取与释放同步状态，共享式获取与释放同步状态，查询同步队列中的等待线程情况
+
+
+独占锁：在同一个时刻只能有一个线程获取到锁，而其他获取锁的线程只能处于同步队列中等待，只有获取锁的线程释放了锁，后继的线程才能够获取锁
+
+**AQS的实现**
+
+同步队列
+
+同步器依赖内部的同步队列（一个FIFO双向队列）来完成同步状态的管理
+- 当前线程获取同步状态失败时，同步器会将当前线程已经等待状态等信息构造成为一个节点（Node）并将其加入同步队列，同时会阻塞当前线程
+- 当同步状态释放时，会把首节点中的线程唤醒，使其再次尝试获取同步状态
+
+加入同步队列的过程需要保证钱程安全
+同步器提供了一个基于CAS的设置尾节点的方法 compareAndSetTail(Node expect, Node update)
+
+
+独占式同步状态获取与释放
+
+首先调用自定义同步器实现的tryAcquire方法，如果同步状态获取失败，则构造同步节点（独占式Node.EXECUSIVE)，并通过addWaiter方法将该节点加入到同步队列的尾部，最后调用acquireQueued(Node node, int arg)方法，使得该节点以”死循环“的方式获取同步状态。如果获取不到则阻塞节点中的线程，而被阻塞线程的环境主要依靠前驱节点的出队或阻塞线程被中断来实现
+
