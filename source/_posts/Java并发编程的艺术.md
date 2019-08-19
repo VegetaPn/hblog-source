@@ -634,3 +634,15 @@ Condition的实现是同步器的内部类，因此每个Condition实例都能�
 
 成功获取同步状态之后，被唤醒的线程将从await()方法返回，此时线程已经成功的获取了锁
 
+
+### ConcurrentLinkedQueue
+
+基于链接节点的无界线程安全队列
+采用先进先出规则堆节点进行排序，采用cas实现
+
+{% asset_img 2.jpg %}
+
+**入队列**
+
+1. 将入队节点设置成当前队列尾节点的下一个节点
+2. 更新tail节点，如果tail.next不为空，将入队节点设置为tail节点；如果tail.next为空，将入队节点设置为tail的next节点
